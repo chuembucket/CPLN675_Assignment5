@@ -2,21 +2,25 @@
 title: "markdown"
 author: "Charlie Huemmler"
 date: "2023-04-26"
-output: html_document
+output: 
+  rmdformats::downcute:
+    code_folding: hide
 ---
+
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
 library(sf)
 library(tidyverse)
+library(here)
+library(raster)
 ```
 
 ```{r}
 
 datafolder <- file.path(here() %>% dirname(), 'assn5data')
 
-national_lu_change <- raster(paste(datafolder, "nlcd_2001_2019_change_index_l48_20210604.img", sep = '/'))
 
 
 lc_change <- raster(paste(datafolder, "delco_nlcd.tif", sep = '/'))
