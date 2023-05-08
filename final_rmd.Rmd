@@ -145,12 +145,43 @@ delco <-
 ```
 
 ```{r plot_msa1, warning= FALSE, message= FALSE}
+
+
+# LCnames <-c(
+#   "Water",
+#   "DevelopedOpen",
+#   "DevelopedLow",
+#   "DevelopedMed",
+#   "DevelopedHigh",
+#   "Barren",
+#   "DeciduousForest",
+#   "EvergreenForest",
+#   "MixedForest",
+#   "ShrubScrub",
+#   "GrassHerbaceous",
+#   "PastureHay",
+#   "CultCrops",
+#   "WoodyWetlands",
+#   "EmergentHerbWet")
+
+
+lc_changespat <- as(lc_change, "SpatRaster")
+
+nlcdcols <- data.frame(coltab(lc_changespat))
+nlcdcols <- nlcdcols[LCcodes + 1,]
+LCcolors <- rgb(red = nlcdcols$red,
+                green = nlcdcols$green,
+                blue = nlcdcols$blue,
+                names = as.character(LCcodes),
+                maxColorValue = 255)
 ggplot()+
   geom_sf(data=delco) +
   geom_raster(data=rast(lc_change) %>% na.omit %>% filter(value > 1), 
               aes(x,y,fill=as.factor(value))) +
-  scale_fill_viridis(direction = -1, discrete=TRUE, name ="Land Cover\nChange") +
-  labs(title = "Land Cover Change, 2008-2019???") +
+  scale_fill_manual(name = "Land cover",
+                    values = LCcolors,
+                    labels = LCnames,
+                    na.translate = FALSE) +   labs(title = "Land Cover Change, 2008-2019???") +
   mapTheme() 
   theme(legend.direction="horizontal")
 ```
@@ -166,8 +197,9 @@ Next, we reclassify the raster such that all the developed grid cell values rece
 reclassMatrix <- 
   matrix(c(
     0,1,0,
-    1,12,1,
-    12,Inf,0),
+    1,2,1,
+    2,6,0,
+    6,Inf,0),
   ncol=3, byrow=T)
 
 reclassMatrix
@@ -237,9 +269,7 @@ ggplot() +
 It is reasonable to hypothesize that the propensity of new development is a function of existing land cover categories. In this section we identify these othe
 
 ```{r}
-LCcodes <- unique(lc_2008)
 
-LCcodes
 
 LCnames <-c(
   "Water",
@@ -269,7 +299,6 @@ LCcolors <- rgb(red = nlcdcols$red,
                 names = as.character(LCcodes),
                 maxColorValue = 255)
 
-LCcolors
 
 ```
 
