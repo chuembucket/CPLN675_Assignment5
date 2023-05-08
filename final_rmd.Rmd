@@ -19,18 +19,19 @@ output:
   }
 </style>
 ```
+
 ## Introduction 
 Understanding where development is likely to take place is crucial for urban planners and decision makers. Regional land use planning requires both supply and demand-side insights to inform how demand interacts with current supply and future goals. Planners are responsible for navigating the trade-offs between economic growth, environmental sustainability, and community objectives.  Including future land development predictions in planning analyses allows planners to understand infrastructure needs, advocate for certain types of growth, and incentive development that meets the community’s goals. 
 
 ### Motivation 
 This project analyzes Delaware County’s historic patterns of development to predict areas that are likely to be developed to inform regional planners of the current and future demands. This information can be used by Delaware County planners when considering regional growth patterns, prioritizing and allocating new developments, and understanding how developments fit within goals for the future. 
 
-This model uses national land cover and land cover change datasets from 2009 and 2019 to predict 2029 development patterns.  We build a binary logistic model using variables including distance to highways, distance to current development, ______, and ______. We hypothesize that future land development is a function of these variables. 
+This model uses national land cover and land cover change datasets from 2009 and 2019 to predict 2029 development patterns.  We build a binary logistic model using variables including distance to highways, distance to current development, distance to train lines, and demographic information. We hypothesize that future land development is a function of these variables. 
 
 We also use this model to create an allocation procedure for urban growth based on population change, development demand, and supply of land in 2029.  The allocation procedure prioritizes future development based on community values by using the model’s outcome, which is probability of development. Planners can use the allocation procedure to understand how different land use and development scenarios will impact the community.
 
 ### Development Scenarios 
-We use two scenarios to predict future land development in our analysis. The first scenario looks at demand-side change based on the population projections for Delaware County. The population predictions will inform planners of where demand for development will be greater. The second scenario examines the incorporation of a hypothetical new development, _____. This scenario explores how the addition of a new development will change potential allocation. 
+We use two scenarios to predict future land development in our analysis. The first scenario looks at demand-side change based on the population projections for Delaware County. The population predictions will inform planners of where demand for development will be greater. The second scenario examines the incorporation of a hypothetical new development, the extension of SEPTA’s Westchester Branch from Wawa west to the county border This scenario explores how the addition of a new development will change potential allocation. 
 
 ## Set Up 
 ```{r load_packages, message=FALSE, warning=FALSE, results = "hide"}
@@ -127,6 +128,7 @@ palette10 <- c("#f7fcf0","#e0f3db","#ccebc5","#a8ddb5","#7bccc4",
 ```
 
 ## Data Wrangling 
+We move onto data wrangling and start by importing land cover data from the US Geological Survey's National Land Cover Database. We specifically pulled 2008 land cover, 2019 land cover, and land cover change for Delaware County.
 ```{r load_data, warning = FALSE, message = FALSE, results = "hide"}
 
 lc_2008 <- raster(paste(datafolder, "delco_2008_final.tif", sep = '/')) 
@@ -146,66 +148,72 @@ delco <-
 
 ```{r plot_msa1, warning= FALSE, message= FALSE}
 
-
-# LCnames <-c(
-#   "Water",
-#   "DevelopedOpen",
-#   "DevelopedLow",
-#   "DevelopedMed",
-#   "DevelopedHigh",
-#   "Barren",
-#   "DeciduousForest",
-#   "EvergreenForest",
-#   "MixedForest",
-#   "ShrubScrub",
-#   "GrassHerbaceous",
-#   "PastureHay",
-#   "CultCrops",
-#   "WoodyWetlands",
-#   "EmergentHerbWet")
+LCnames <-c("None",
+  "Water",
+  "Urban",
+  "Wetland within Class",
+  "Herbaceous Wetland",
+  "Agriculture within Class",
+  "Cultivated Crop",
+  "Hay/Pasture",
+  "Rangeland herbaceous and shrub",
+  "Barren",
+  "Forest",
+  "Woody Wetland")
 
 
 lc_changespat <- as(lc_change, "SpatRaster")
+LCcodes <- unique(lc_change)
 
-nlcdcols <- data.frame(coltab(lc_changespat))
-nlcdcols <- nlcdcols[LCcodes + 1,]
-LCcolors <- rgb(red = nlcdcols$red,
-                green = nlcdcols$green,
-                blue = nlcdcols$blue,
+nlcdcols_c <- data.frame(coltab(lc_changespat))
+nlcdcols_c <- nlcdcols_c[LCcodes + 1,]
+LCcolors <- rgb(red = nlcdcols_c$red,
+                green = nlcdcols_c$green,
+                blue = nlcdcols_c$blue,
                 names = as.character(LCcodes),
                 maxColorValue = 255)
 ggplot()+
   geom_sf(data=delco) +
-  geom_raster(data=rast(lc_change) %>% na.omit %>% filter(value > 1), 
+  geom_raster(data=rast(lc_change) %>% na.omit %>% filter(value > 1),
               aes(x,y,fill=as.factor(value))) +
   scale_fill_manual(name = "Land cover",
                     values = LCcolors,
                     labels = LCnames,
                     na.translate = FALSE) +   labs(title = "Land Cover Change, 2008-2019???") +
-  mapTheme() 
-  theme(legend.direction="horizontal")
+  mapTheme()
+  
+
+
 ```
 
-https://www.mrlc.gov/data/legends/national-land-cover-database-class-legend-and-description
 
 
 
 
-Next, we reclassify the raster such that all the developed grid cell values receive a value of 1 and all other values receive a value of 0. This is done using a reclassify matrix. The matrix reads row by row. Row 1 says any grid cell ranging from 0 to 12 takes a value of 0; 13 or greater through 24, a value of 1; and all other values take 0.
+We classify the land cover change data in order to identify what areas have experienced development change since 2008. Here, we reclassify so the raster data so that each area is assigned a value of 0, meaning no development has occurred, or 1, meaning development has occurred. This binary development change will be our dependent variable for our analysis and modeling. 
 
 ```{r, warning = FALSE, message = FALSE}
-reclassMatrix <- 
-  matrix(c(
-    0,1,0,
-    1,2,1,
-    2,6,0,
-    6,Inf,0),
-  ncol=3, byrow=T)
+reclassMatrix <- matrix(c(
+  0, 0,
+  1, 0,
+  2, 1,
+  3, 0,
+  4, 0,
+  5, 0,
+  6, 0,
+  7, 1, 
+  8, 1, 
+  9, 1, 
+  10, 1, 
+  11, 1, 
+  12, 1, 
+  Inf, 0
+), ncol=2, byrow=T)
 
 reclassMatrix
 ```
 
-Now `reclassify` and convert all 0’s to `NA`. We apply a name to the raster with `names`. This is done to make it faster to join raster to the fishnet below. You can see the frequency table of values with `freq(lc_change2)`. There are 655 areas that changed from underdeveloped to developed in the data.
+
 
 ```{r, warning = FALSE, message = FALSE}
 lc_change2 <- 
@@ -225,6 +233,10 @@ ggplot() +
   mapTheme()
 ```
 
+### Creating the Fishnet
+We use a fishnet that covers Delaware County for our analysis. This will allow us to assign values for each of the features in our analysis to cells within the fishnet. This fishnet uses a 500-meter resolution. 
+
+
 ```{r delco_fishnet start, warning = FALSE, message = FALSE}
 delco_fishnet <- 
   st_make_grid(delco, 500, square = F) %>%
@@ -242,6 +254,9 @@ ggplot() +
   labs(title="Fishnet, 500 Meter Resolution") +
   mapTheme()
 ```
+
+
+We then aggregate the land cover change data with the fishnet so we can see which cells have had development since 2008. The fishnet with land cover change is presented below. 
 
 ```{r, warning = FALSE, message = FALSE}
 changePoints <-
@@ -264,14 +279,18 @@ ggplot() +
   mapTheme()
 ```
 
-## 2.3. Land Cover in 2009
+## 2.3. Land Cover in 2008
 
-It is reasonable to hypothesize that the propensity of new development is a function of existing land cover categories. In this section we identify these othe
+Below we plot the land cover by type in Delaware County for 2008. 
+
+### Land Cover in 2019
+We also present the land cover by type in Delaware County for 2019.
 
 ```{r}
+#https://www.mrlc.gov/data/legends/national-land-cover-database-class-legend-and-description
 
 
-LCnames <-c(
+LCnames <-c("NA",
   "Water",
   "DevelopedOpen",
   "DevelopedLow",
@@ -290,12 +309,13 @@ LCnames <-c(
 
 
 lc_2008spat <- as(lc_2008, "SpatRaster")
+LCcodes <- unique(lc_2008)
 
-nlcdcols <- data.frame(coltab(lc_2008spat))
-nlcdcols <- nlcdcols[LCcodes + 1,]
-LCcolors <- rgb(red = nlcdcols$red,
-                green = nlcdcols$green,
-                blue = nlcdcols$blue,
+nlcdcols08 <- data.frame(coltab(lc_2008spat))
+nlcdcols08 <- nlcdcols08[LCcodes + 1,]
+LCcolors <- rgb(red = nlcdcols08$red,
+                green = nlcdcols08$green,
+                blue = nlcdcols08$blue,
                 names = as.character(LCcodes),
                 maxColorValue = 255)
 
@@ -337,6 +357,11 @@ ggdraw(plot_grid(p1, p2, legend, ncol=3, align='v', rel_widths=c(1, 1, .4)))
 
 ```
 
+## Feature Engineering
+In this section, we engineer additional features that will be used as independent variables for our modeling. Features include land cover type, population data, distance to highways, distance to railways, and spatial lag of development. 
+
+### Land Cover Type Categories
+We further refine the land cover types into categories in order to understand where development happens most often. Here we recategorize the land use classification so that any open space plus any low, medium, or high intensity development is considered developed. We categorize the remaining land cover types into the following groups: forest, farm, woodlands, water, or other undeveloped land. 
 
 ```{r, warning = FALSE, message = FALSE}
 developed <- lc_2008 == 21 | lc_2008 == 22 | lc_2008 == 23 | lc_2008 == 24
@@ -409,15 +434,14 @@ aggregatedRasters %>%
    mapTheme()
 ```
 
+### Census Data
+We also include population and population change variables in our analysis given that these population metrics impact demand for development. We import census population data for each of the census tracts in Delaware County. We present 2008 and 2019 populations for the county by tract and by fishnet below. 
 
 ```{r load_key, warning = FALSE, eval = FALSE}
 #census_api_key("YOUR KEY GOES HERE", overwrite = TRUE)
 census_api_key("4bbe4bead4e5817f6a6b79e62c5bea69e77f1887", overwrite = TRUE)
 ```
 
-First data is pulled for 2009 and reprojected.
-
-_MF Note: In your assignment, you will be using a different timeframe, and therefore you will use ACS data rather than decennial census data. Look at the materials from week 5 (Intro to SF and Tidyverse) and the Intro to R for Planners text to see how `get_acs` can be used to replace `get_decennial` in your workflow._
 
 ```{r, warning = FALSE, message = FALSE, results = "hide"}
 # Specify which variable(s) you would like to grab. Here, only one (Total Population) is listed, but you could add more to the call.
@@ -441,8 +465,6 @@ delcoPop09  <- delcoPop09  %>%
   st_transform(st_crs(delco_fishnet))
 
 ```
-
-Now data for 2010 is downloaded. In this instance, `st_buffer` is used to buffer the the tracts by -1ft. This is done because `tidycensus` appears to return geometries that are problematic when subjected to the area weighted interpolation function below. As done in previous chapters, a very small buffer is used to correct the geometries.
 
 ```{r, warning = FALSE, message = FALSE, results = "hide"}
 # Specify which variable(s) you would like to grab. Here, only one (Total Population) is listed, but you could add more to the call.
@@ -539,6 +561,10 @@ ggplot() +
   mapTheme(), ncol=2)
 ```
 
+### Existing Development & Infrastructure
+In addition to land types and census data, we incorporate spatial variables related to existing development and infrastructure. Here we create the following features: distance to highways, distance to railways, municipalities, and spatial lag to development. Spatial lag takes the distance to existing development into considerations, as we hypothesize that new development is a function of the previous variables plus the pattern of existing development. 
+
+
 ```{r, warning = FALSE, message = FALSE, results = "hide"}
 
 delcoRoads <- read_sf("C:/Users/cchue/Documents/GIS/delcodata/streets.shp")  
@@ -588,25 +614,34 @@ ggplot() +
 
 ```{r trains}
 
-septa_rr_line <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/regionalraillines.shp") %>% 
+septa_rr_line <- read_sf(paste(datafolder, "rail_existing_clip.shp", sep = '/')) %>% 
   st_transform(crs = st_crs(delco)) 
 
+septa_rr_line_ext <- read_sf(paste(datafolder, "rail_merge_clip.shp", sep = '/')) %>% 
+  st_transform(crs = st_crs(delco)) 
+
+
+
+septa_rr_line_addition <- read_sf(paste(datafolder, "rail_extension_clip.shp", sep = '/')) %>% 
+  st_transform(crs = st_crs(delco)) 
+
+
+
+septa_rr_line_ext <- septa_rr_line_ext[delco,]
+
 septa_rr_line <- septa_rr_line[delco,]
+
 
 septa_rr_station <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/regionalrailstats.shp")  
 
 septa_trolley_line <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/trolley.shp")  
 septa_trolley_station <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/trolleystops.shp")  
 
+
 ggplot()+
-  geom_sf(data=delco) +
-  geom_raster(data=rast(lc_2019) %>% na.omit %>% filter(value > 0), 
-              aes(x,y,fill=as.factor(value))) +
-  geom_sf(data = septa_rr_line, line = 'dashed')+
-  scale_fill_manual(name = "Land cover",
-                    values = LCcolors,
-                    labels = LCnames,
-                    na.translate = FALSE) 
+  geom_sf(data=delco, fill ="#86BBD8",color = "transparent") +
+  geom_sf(data = septa_rr_line, line = 'dashed', color ="red")+
+  labs(title = "Existing Regional Rail in Delaware County") +
   mapTheme()+
   theme(legend.position = 'none')
 
@@ -616,6 +651,7 @@ ggplot()+
 emptyRaster <- lc_change
 emptyRaster[] <- NA
 
+#for existing rail
 rr_raster <- 
   as(septa_rr_line,'Spatial') %>%
   rasterize(.,emptyRaster)
@@ -632,6 +668,28 @@ rrPoints_fishnet <-
   aggregate(rrPoints, delco_fishnet, mean) %>%
   mutate(distance_rr = ifelse(is.na(distance_rr),0,distance_rr))
 
+#for future rail extension/2030 predictions
+rr_raster2 <- 
+  as(septa_rr_line_additions,'Spatial') %>%
+  rasterize(.,emptyRaster)
+
+rr_raster_distance2 <- distance(rr_raster2)
+names(rr_raster_distance2) <- "distance_rr"
+
+rrPoints2 <-
+  rasterToPoints(rr_raster_distance2) %>%
+  as.data.frame() %>%
+  st_as_sf(coords = c("x", "y"), crs = st_crs(delco_fishnet))
+
+rrPoints2_fishnet <- 
+  aggregate(rrPoints2, delco_fishnet, mean) %>%
+  mutate(distance_rr2 = ifelse(is.na(distance_rr2),0,distance_rr2))
+
+#back to existing
+rrPoints_fishnet <- 
+  aggregate(rrPoints, delco_fishnet, mean) %>%
+  mutate(distance_rr = ifelse(is.na(distance_rr),0,distance_rr))
+
 ggplot() +
   geom_sf(data=delco) +
   geom_sf(data=rrPoints_fishnet, aes(fill=factor(ntile(distance_rr,5))),color = NA) +
@@ -643,7 +701,19 @@ ggplot() +
        subtitle = "As fishnet centroids; current Regional Rail visualized in red") +
   mapTheme()
 ```
+### New Development: Extension of the SEPTA's Westchester Brand
+For the supply-side development scenario, we propose extending the Westchester Brand from Wawa west to the county boarder as shown below. 
 
+```{r}
+ggplot()+
+  geom_sf(data=delco, fill ="#86BBD8", color = "transparent") +
+  geom_sf(data = septa_rr_line, line = 'dashed', color ="red")+
+  geom_sf(data = septa_rr_line_addition, line = 'dashed', color ="black", width = 5)+
+  labs(title = "Proposed Extension of Regional Rail in Delaware County",
+       subtitle="Existing rail displayed in red, proposed extension displayed in black") +
+  mapTheme()+
+  theme(legend.position = 'none')
+```
 
 
 ```{r municplaitiets}
@@ -712,22 +782,26 @@ ggplot() +
 ```
 
 
-## 2.8. Create the Final Dataset
-
+### Final Dataset
+Below we combine all of the features we engineered and map them to our fishnet.
 ```{r, warning = FALSE, message = FALSE}
 dat <- 
   cbind(
-    fishnet, highwayPoints_fishnet, fishnetPopulation, aggregatedRasters, delcoMunic_fishnet) %>%
+    fishnet, highwayPoints_fishnet, rrPoints_fishnet, fishnetPopulation, aggregatedRasters, delcoMunic_fishnet) %>%
   dplyr::select(lc_change, developed, forest, farm, wetlands, otherUndeveloped, water,
-                pop2009, pop2019, pop_Change, distance_highways,lagDevelopment, Name, munic_area) %>%
+                pop2009, pop2019, pop_Change, distance_highways, distance_rr, lagDevelopment, Name, munic_area) %>%
   mutate(developed10 = ifelse(lc_change == 1 & developed == 1, 0, developed)) %>%
   filter(water == 0) 
 ```
 
-#3.  Exploratory Analysis
+## Exploratory Analysis
+We now continue into the exploratory analysis process. In this section, we explore the association between development change and our spatial and population variables. We examine the ways in which these variables interact with the fishnet cells that experienced new development.  
+
+### Continuous Variables
+Below we explore the continuous variables: distance to highways, distance to railways, and spatial lag to development. We can see that new development occurs in cells that are closer to highways, railways, and other development. 
 ```{r, warning = FALSE, message = FALSE}
 dat %>%
-  dplyr::select(distance_highways,lagDevelopment,lc_change) %>%
+  dplyr::select(distance_highways,distance_rr,lagDevelopment, lc_change) %>%
   gather(Variable, Value, -lc_change, -geometry) %>%
   ggplot(., aes(lc_change, Value, fill=lc_change)) + 
     geom_bar(position = "dodge", stat = "summary", fun.y = "mean") +
@@ -738,7 +812,8 @@ dat %>%
     labs(title="New Development as a Function of the Continuous Variables") +
     plotTheme 
 ```
-
+### Population Variables
+We also examine the relationship between new development and population variables. New development in Delaware County occurs in cells where population change is higher than other cells. This follows our hypothesis that higher rates of population change leads to more development. Interestingly, 2009 and 2019 population show a different relationship. We can see that new development seems to occur in cells with lower population in Delaware County.
 ```{r, warning = FALSE, message = FALSE}
 dat %>%
   dplyr::select(pop2009,pop2019,pop_Change,lc_change) %>%
@@ -752,8 +827,8 @@ dat %>%
     labs(title="New Development as a Function of Factor Variables") +
     plotTheme
 ```
-
-
+## Land Conversion Rates
+We present a table of conversion rates for each land cover category below. The table below indicates that forest and wetlands are most often converted to development in Delaware County. 
 ```{r, warning = FALSE, message = FALSE}
 dat %>%
   dplyr::select(lc_change:otherUndeveloped,developed) %>%
@@ -768,9 +843,11 @@ dat %>%
   kable() %>% kable_styling(full_width = F)
 ```
 
-# 4. Predicting for 2010
+## Predicting for 2030
+We now move into the modeling section of the analysis. We developed seven logistic regression models to predict where development will occur for 2019 and 2029/2030. We discuss the models' ability to predict accurate results and the implications for planners in the following sections. 
 
-## 4.2. Modeling
+### Modeling
+As mentioned, we build seven models using a combination of the following variables: land cover type, spatial lag to development population in 2009, population in 2019, population change, distance to highways, and distance to railroads. We used a 50% split to separate our data into two parts: a training set and a test set.
 ```{r, warning = FALSE, message = FALSE}
 set.seed(3456)
 trainIndex <- 
@@ -780,21 +857,17 @@ trainIndex <-
 datTrain <- dat[ trainIndex,]
 datTest  <- dat[-trainIndex,]
 
-nrow(dat)
-```
-
-```{r, warning = FALSE, message = FALSE}
 Model1 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped, 
               family="binomial"(link="logit"), data = datTrain)
 
 Model2 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment, 
               family="binomial"(link="logit"), data = datTrain)
               
-Model3 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop2009, 
+Model3 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_2000, 
               family="binomial"(link="logit"), data = datTrain)          
               
-Model4 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop2009 + 
-              pop2019, 
+Model4 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_2000 + 
+              pop_2010, 
               family="binomial"(link="logit"), data = datTrain)              
             
 Model5 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_Change, 
@@ -803,23 +876,59 @@ Model5 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDeve
 Model6 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_Change + 
               distance_highways, 
               family="binomial"(link="logit"), data = datTrain) 
-```
 
-```{r, warning = FALSE, message = FALSE}
-modelList <- paste0("Model", 1:6)
+Model7 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_Change + 
+              distance_highways + distance_rr,
+              family="binomial"(link="logit"), data = datTrain) 
+
+
+modelList <- paste0("Model", 1:7)
 map_dfc(modelList, function(x)pR2(get(x)))[4,] %>%
-  setNames(paste0("Model",1:6)) %>%
+  setNames(paste0("Model",1:7)) %>%
   gather(Model,McFadden) %>%
   ggplot(aes(Model,McFadden)) +
     geom_bar(stat="identity") +
     labs(title= "McFadden R-Squared by Model") +
     plotTheme
 ```
-
+### Predictions
 ```{r, warning = FALSE, message = FALSE}
+predsForMap <-         
+  dat %>%
+    mutate(probs = predict(Model7, dat, type="response") ,
+           Threshold_5_Pct = as.factor(ifelse(probs >= 0.05 ,1,0)),
+           Threshold_17_Pct =  as.factor(ifelse(probs >= 0.17 ,1,0)),
+           Threshold_50_Pct =  as.factor(ifelse(probs >= 0.5 ,1,0))) %>%
+    dplyr::select(lc_change,Threshold_5_Pct,Threshold_17_Pct,Threshold_50_Pct) %>%
+    gather(Variable,Value, -geometry) %>%
+    st_cast("POLYGON")
+```
+
+### Predictions Based on Threshold
+```{r, warning = FALSE, message = FALSE}
+options(yardstick.event_first = FALSE)
+
+testSetProbs <- 
+  testSetProbs %>% 
+  mutate(predClass_05 = as.factor(ifelse(testSetProbs$probs >= 0.05 ,1,0)),
+         predClass_17 = as.factor(ifelse(testSetProbs$probs >= 0.17 ,1,0)),
+         predClass_50 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0)),
+         predClass_60 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0)),
+         predClass_70 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0))) 
+
+testSetProbs %>%
+   dplyr::select(-probs) %>%
+   gather(Variable, Value, -class) %>%
+  group_by(Variable) %>%
+   summarize(Sensitivity = round(yardstick::sens_vec(class,factor(Value)),2),
+             Specificity = round(yardstick::spec_vec(class,factor(Value)),2),
+             Accuracy = round(yardstick::accuracy_vec(class,factor(Value)),2)) %>% 
+   kable() %>%
+   kable_styling(full_width = F)
+
 testSetProbs <- 
   data.frame(class = datTest$lc_change,
-             probs = predict(Model6, datTest, type="response")) 
+             probs = predict(Model7, datTest, type="response")) 
   
 ggplot(testSetProbs, aes(probs)) +
   geom_density(aes(fill=class), alpha=0.5) +
@@ -828,39 +937,6 @@ ggplot(testSetProbs, aes(probs)) +
   labs(title = "Histogram of test set predicted probabilities",
        x="Predicted Probabilities",y="Density") +
   plotTheme
-```
-
-## 4.3. Accuracy
-```{r, warning = FALSE, message = FALSE}
-options(yardstick.event_first = FALSE)
-
-testSetProbs <- 
-  testSetProbs %>% 
-  mutate(predClass_05 = as.factor(ifelse(testSetProbs$probs >= 0.05 ,1,0)),
-         predClass_17 = as.factor(ifelse(testSetProbs$probs >= 0.17 ,1,0)),
-         predClass_50 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0))) 
-
-# testSetProbs %>%
-#   dplyr::select(-probs) %>%
-#   gather(Variable, Value, -class) %>%
-#   group_by(Variable) %>%
-#   summarize(Sensitivity = round(yardstick::sens_vec(class,factor(Value)),2),
-#             Specificity = round(yardstick::spec_vec(class,factor(Value)),2),
-#             Accuracy = round(yardstick::accuracy_vec(class,factor(Value)),2)) %>% 
-#   kable() %>%
-#   kable_styling(full_width = F)
-```
-
-```{r, warning = FALSE, message = FALSE}
-predsForMap <-         
-  dat %>%
-    mutate(probs = predict(Model6, dat, type="response") ,
-           Threshold_5_Pct = as.factor(ifelse(probs >= 0.05 ,1,0)),
-           Threshold_17_Pct =  as.factor(ifelse(probs >= 0.17 ,1,0)),
-           Threshold_50_Pct =  as.factor(ifelse(probs >= 0.5 ,1,0))) %>%
-    dplyr::select(lc_change,Threshold_5_Pct,Threshold_17_Pct,Threshold_50_Pct) %>%
-    gather(Variable,Value, -geometry) %>%
-    st_cast("POLYGON")
 ```
 
 ```{r, warning = FALSE, message= FALSE, fig.height = 6, fig.width= 8}
@@ -872,7 +948,7 @@ ggplot() +
   labs(title="Development Predictions - Low Threshold") + 
   mapTheme()
 ```
-
+### Predictions Based on Confusion Matrix
 ```{r, warning = FALSE, message = FALSE}
 ConfusionMatrix.metrics <-
   dat %>%
@@ -886,9 +962,7 @@ ConfusionMatrix.metrics <-
     dplyr::select(., starts_with("True")) %>%
     gather(Variable, Value, -geometry) %>%
     st_cast("POLYGON") 
-```
 
-```{r, warning = FALSE, message = FALSE, fig.height= 8, fig.width= 8 }
 ggplot(data=ConfusionMatrix.metrics) +
   geom_sf(aes(fill = as.factor(Value)), color = NA) +
   facet_wrap(~Variable) +
@@ -897,7 +971,7 @@ ggplot(data=ConfusionMatrix.metrics) +
   labs(title="Development Predictions - Low Threshold") + mapTheme()
 ```
 
-## 4.4 Generalizability
+## Generalizability & Spatial Cross Validation
 ```{r, warning = FALSE, message = FALSE}
 spatialCV <- function(dataFrame, uniqueID, dependentVariable, modelName) {
 
@@ -939,17 +1013,13 @@ endList <- list()
 #return the final list of counties and associated predictions  
   return (as.data.frame(endList))
 }
-```
 
-```{r, warning = FALSE, message = FALSE}
 dat_cv <- dat %>% mutate(Name = ifelse(!is.na(Name),Name,'Edge') )
 
 spatialCV_counties <-
   spatialCV(dat_cv,"Name","lc_change", Model6) %>%
   mutate(predClass = as.factor(ifelse(probs >= 0.5 ,1,0)))
-```
 
-```{r, warning = FALSE, message = FALSE}
 spatialCV_metrics <-
   spatialCV_counties %>% 
     group_by(county) %>% 
@@ -963,48 +1033,59 @@ spatialCV_metrics %>%
   kable_styling(full_width = F)
 ```
 
-# 5. Predicting Land Cover Demand for 2029??? 
-figure our year based on population projections?
+## Predicting Land Cover Demand for 2030
 ```{r, warning = FALSE, message = FALSE}
 dat <-
   dat %>%
   mutate(lagDevelopment = nn_function(xyC(.), xyC(filter(.,developed10 == 1)),2))
 ```
 
-
+### Population Projections
 ```{r, eval=FALSE, warning = FALSE, message = FALSE}
-countyPopulation_2020 <- 
+dat %>% mutate(NAME = ifelse(!is.na(Name),Name,'Edge') )
+
+muniPopulation_2030 <- 
   data.frame(
    NAME = 
-     c("Fort Bend","San Jacinto","Waller","Galveston","Harris","Liberty","Chambers",
-       "Brazoria","Austin","Montgomery"),
-   county_projection_2020 = 
-     c(888595,32428,58002,335006,4885616,90780,47621,410571,36542,660481)) %>%
-   left_join(
+     c("Aldan Borough","Aston Township", "Bethel Township","Brookhaven Borough", "Chadds Ford Township", "Chester City", "Chester Heights Borough", "Chester Township", "Clifton Heights Borough", "Collingdale Borough", "Colwyn Borough", "Concord Township", "Darby Borough", "Darby Township", "East Lansdowne Borough", "Eddystone Borough", "Edgmont Township", "Folcroft Borough", "Glenolden Borough", "Haverford Township", "Landsdowne Borough", "Lower Chichester Township", "Marcus Hook Borough", "Marple Township", "Media Borough", "Middletown Township", "Millbourne Borough","Morton Borough", "Nether Providence Township", "Newton Township", "Norwood Borough", "Parkslide Borough", "Prospect Park Borough", "Radnor Township", "Ridley Park Borough", "Ridley Township", "Rose Valley Borough", "Rutledge Borough", "Sharon Hill Borough", "Springfield Township", "Swarthmore Borough", "Thornbury Township", "Tinicum Township", "Trainer Borough", "Upland Borough", "Upper Chichester Township", "Upper Darby Township", "Uppery Providence Township", "Yeadon Borough"),
+   muni_projection_2030 = 
+     c(4137, 17137, 10142, 8308, 3978, 31988, 2688, 9679, 6535, 8795, 2304, 16580, 11882, 28332, 2679, 2666, 3684, 6447, 7046, 51881, 10625, 3665, 2552, 24550, 5391, 17792, 1168, 2727, 13861, 4145, 5931, 2184, 6112, 32266, 7104, 29300, 903, 811, 5793, 24130, 6331, 8508,4273, 1751, 2734, 17416, 82464, 21180, 11472)) %>%
+   cross_join(
      dat %>%
        st_set_geometry(NULL) %>%
-       group_by(NAME) %>%
-       summarize(county_population_2010 = round(sum(pop_2010))))
+       group_by(Name) %>%
+       summarize(muni_pop2009 = round(sum(pop2009))))
 
-countyPopulation_2020 %>%
-  gather(Variable,Value, -NAME) %>%
-  ggplot(aes(reorder(NAME,-Value),Value)) +
+muniPopulation_2030_1 <- muniPopulation_2030 %>%
+  group_by(NAME) %>%
+  summarize(muni_pop2030 = round(mean(muni_projection_2030)))
+colnames(muniPopulation_2030_1)[1] = "Name"
+
+muniPopulation_2030 <- left_join(muniPopulation_2030, muniPopulation_2030_1)
+muniPopulation_2030 <- muniPopulation_2030 %>%
+  dplyr::select(Name, muni_pop2009, muni_pop2030)
+
+muniPopulation_2030 %>%
+  gather(Variable,Value, -Name) %>%
+  ggplot(aes(reorder(Name,-Value),Value)) +
   geom_bar(aes(fill=Variable), stat = "identity", position = "dodge") +
   scale_fill_manual(values = palette2,
-                    labels=c("2020","2010"),
+                    labels=c("2008","2030"),
                     name="Population") +
-  labs(title="Population Change by County: 2010 - 2020",
+  labs(title="Population Change by County: 2008 - 2030",
        x="County", y="Population") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   plotTheme
+
 ```
 
-```{r,eval=FALSE, warning = FALSE, message = FALSE}
+## Development Demand in 2030
+```{r}
 dat_infill <-
   dat %>%
   #calculate population change
-    left_join(countyPopulation_2020) %>%
-    mutate(proportion_of_county_pop = pop_2010 / county_population_2010,
+    left_join(muniPopulation_2030) %>%
+    mutate(proportion_of_county_pop = pop_2009 / county_population_2010,
            pop_2020.infill = proportion_of_county_pop * county_projection_2020,
            pop_Change = round(pop_2020.infill - pop_2010),2) %>%
     dplyr::select(-county_projection_2020, -county_population_2010, 
@@ -1022,203 +1103,3 @@ dat_infill %>%
   labs(title= "Development Demand in 2020: Predicted Probabilities") +
   mapTheme()
 ```
-
-<!-- # 6. Comparing Predicted Development Demand & Environmental Sensitivity -->
-
-<!-- ## 6.2. 2011 Land Cover Data -->
-
-<!-- To begin, the 2011 Land Cover data is read in and reclassified. -->
-
-<!-- ```{r, warning = FALSE, message = FALSE} -->
-<!-- lc_2011 <- raster("https://github.com/mafichman/CPLN_675/raw/main/Week_14_15/data/UGB_Chapter_data/lc_2011_4k.tif") -->
-
-<!-- developed11 <- lc_2011 == 21 | lc_2011 == 22 | lc_2011 == 23 | lc_2011 == 24 -->
-<!-- forest11 <- lc_2011 == 41 | lc_2011 == 42 | lc_2011 == 43  -->
-<!-- farm11 <- lc_2011 == 81 | lc_2011 == 82  -->
-<!-- wetlands11 <- lc_2011 == 90 | lc_2011 == 95  -->
-<!-- otherUndeveloped11 <- lc_2011 == 52 | lc_2011 == 71 | lc_2011 == 31  -->
-<!-- water11 <- lc_2011 == 11 -->
-
-<!-- names(developed11) <- "developed11" -->
-<!-- names(forest11) <- "forest11" -->
-<!-- nameme + theme(legend.position = "none") -->
-
-<!-- s(farm11) <- "farm11" -->
-<!-- names(wetlands11) <- "wetlands11" -->
-<!-- names(otherUndeveloped11) <- "otherUndeveloped11" -->
-<!-- names(water11) <- "water11" -->
-
-<!-- ggplot() + -->
-<!--   geom_sf(data=houstonMSA) + -->
-<!--   geom_raster(data = rbind(rast(lc_2001) %>% mutate(label = "2001"), -->
-<!--                            rast(lc_2011) %>% mutate(label = "2011")) %>%  -->
-<!--               na.omit %>% filter(value > 0),  -->
-<!--               aes(x,y,fill=as.factor(value))) + -->
-<!--   facet_wrap(~label) + -->
-<!--   scale_fill_viridis(discrete=TRUE, name ="") + -->
-<!--   labs(title = "Land Cover, 2001 & 2011a") + -->
-<!--   mapTheme() -->
-<!-- ``` -->
-
-<!-- ```{r, warning = FALSE, message = FALSE} -->
-<!-- theRasterList11 <- c(developed11,forest11,farm11,wetlands11,otherUndeveloped11,water11) -->
-
-<!-- dat2 <- -->
-<!--   aggregateRaster(theRasterList11, dat) %>% -->
-<!--   dplyr::select(developed11,forest11,farm11,wetlands11,otherUndeveloped11,water11) %>% -->
-<!--   st_set_geometry(NULL) %>% -->
-<!--   bind_cols(.,dat) %>% -->
-<!--   st_sf() %>% -->
-<!--   st_cast("POLYGON") -->
-
-<!-- dat2 %>% -->
-<!--   gather(var,value,developed11:water11) %>% -->
-<!--   st_centroid() %>% -->
-<!--   mutate(X = st_coordinates(.)[,1], -->
-<!--          Y = st_coordinates(.)[,2]) %>% -->
-<!--   ggplot() + -->
-<!--     geom_sf(data=houstonMSA) + -->
-<!--     geom_point(aes(X,Y, colour=as.factor(value))) + -->
-<!--     facet_wrap(~var) + -->
-<!--     scale_colour_manual(values = palette2, -->
-<!--                         labels=c("Other","Land Cover"), -->
-<!--                         name = "") + -->
-<!--     labs(title = "Land Cover Types, 2011", -->
-<!--          subtitle = "As fishnet centroids") + -->
-<!--    mapTheme() -->
-<!-- ``` -->
-
-<!-- ## 6.3. Sensitive Land Cover Lost -->
-<!-- ```{r, warning = FALSE, message = FALSE, fig.height = 6, fig.width= 6} -->
-<!-- dat2 <- -->
-<!--   dat2 %>% -->
-<!--    mutate(sensitive_lost11 = ifelse(forest == 1 & forest11 == 0 | -->
-<!--                                     wetlands == 1 & wetlands11 == 0,1,0)) -->
-
-<!-- ggplot() + -->
-<!--   geom_point(data=dat2, aes(x=xyC(dat2)[,1], y=xyC(dat2)[,2], colour=as.factor(sensitive_lost11))) + -->
-<!--   scale_colour_manual(values = palette2, -->
-<!--                       labels=c("No Change","Sensitive Lost"), -->
-<!--                       name = "") + -->
-<!--   labs(title = "Sensitive lands lost: 2001 - 2011", -->
-<!--        subtitle = "As fishnet centroids") + -->
-<!--   mapTheme() -->
-<!-- ``` -->
-
-<!-- ## 6.4 Landscape Fragmentation -->
-<!-- ```{r, warning = FALSE, message = FALSE, fig.height = 6, fig.width= 6} -->
-<!-- sensitiveRegions <-  -->
-<!--   raster::clump(wetlands11 + forest11) %>% -->
-<!--   rasterToPolygons() %>% -->
-<!--   st_as_sf() %>% -->
-<!--   group_by(clumps) %>%  -->
-<!--   summarize() %>% -->
-<!--     mutate(Acres = as.numeric(st_area(.) * 0.0000229568)) %>% -->
-<!--     filter(Acres > 3954)  %>% -->
-<!--   dplyr::select() %>% -->
-<!--   raster::rasterize(.,emptyRaster)  -->
-<!-- sensitiveRegions[sensitiveRegions > 0] <- 1   -->
-<!-- names(sensitiveRegions) <- "sensitiveRegions" -->
-
-<!-- dat2 <- -->
-<!--   aggregateRaster(c(sensitiveRegions), dat2) %>% -->
-<!--   dplyr::select(sensitiveRegions) %>% -->
-<!--   st_set_geometry(NULL) %>% -->
-<!--   bind_cols(.,dat2) %>% -->
-<!--   st_sf() -->
-
-<!-- ggplot() + -->
-<!--   geom_point(data=dat2, aes(x=xyC(dat2)[,1], y=xyC(dat2)[,2], colour=as.factor(sensitiveRegions))) + -->
-<!--   scale_colour_manual(values = palette2, -->
-<!--                       labels=c("Other","Sensitive Regions"), -->
-<!--                       name="") + -->
-<!--   labs(title = "Sensitive regions", -->
-<!--        subtitle = "Continous areas of either wetlands or forests\ngreater than 1 acre") + -->
-<!--   mapTheme() -->
-<!-- ``` -->
-
-<!-- ## 6.5. Summarize by County -->
-<!-- ```{r, warning = FALSE, message = FALSE} -->
-<!-- county_specific_metrics <-  -->
-<!--   dat2 %>% -->
-<!--   #predict development demand from our model -->
-<!--   mutate(Development_Demand = predict(Model6, dat2, type="response")) %>% -->
-<!--   #get a count count of grid cells by county which we can use to calculate rates below -->
-<!--   left_join(st_set_geometry(dat, NULL) %>% group_by(NAME) %>% summarize(count = n())) %>% -->
-<!--   #calculate summary statistics by county -->
-<!--   group_by(NAME) %>% -->
-<!--   summarize(Total_Farmland = sum(farm11) / max(count), -->
-<!--             Total_Forest = sum(forest11) / max(count), -->
-<!--             Total_Wetlands = sum(wetlands11) / max(count), -->
-<!--             Total_Undeveloped = sum(otherUndeveloped11) / max(count), -->
-<!--             Sensitive_Land_Lost = sum(sensitive_lost11) / max(count), -->
-<!--             Sensitive_Regions = sum(sensitiveRegions) / max(count), -->
-<!--             Mean_Development_Demand = mean(Development_Demand)) %>% -->
-<!--   #get population data by county -->
-<!--   left_join(countyPopulation_2020 %>%  -->
-<!--             mutate(Population_Change = county_projection_2020 - county_population_2010, -->
-<!--                    Population_Change_Rate = Population_Change / county_projection_2020) %>% -->
-<!--             dplyr::select(NAME,Population_Change_Rate)) -->
-<!-- ``` -->
-
-<!-- ```{r, warning = FALSE, message = FALSE} -->
-<!-- county_specific_metrics %>% -->
-<!--   gather(Variable, Value, -NAME, -geometry) %>% -->
-<!--   mutate(Variable = factor(Variable, levels=c("Population_Change_Rate","Mean_Development_Demand", -->
-<!--                                               "Total_Farmland","Total_Undeveloped","Total_Forest", -->
-<!--                                               "Total_Wetlands","Sensitive_Land_Lost","Sensitive_Regions", -->
-<!--                                               ordered = TRUE))) %>% -->
-<!--   mutate(Planning_Designation = case_when( -->
-<!--     Variable == "Population_Change_Rate" | Variable == "Mean_Development_Demand" ~ "Demand-Side", -->
-<!--     Variable == "Total_Farmland" | Variable == "Total_Undeveloped"               ~ "Suitable", -->
-<!--     TRUE                                                                         ~ "Not Suitable")) %>% -->
-<!--   ggplot(aes(x=Variable, y=Value, fill=Planning_Designation)) + -->
-<!--     geom_bar(stat="identity", position=position_dodge(), colour="black") + -->
-<!--     facet_wrap(~NAME, ncol=5) + -->
-<!--     coord_flip() + -->
-<!--     scale_y_continuous(breaks = seq(.25, 1, by = .25)) + -->
-<!--     geom_vline(xintercept = 2.5) + geom_vline(xintercept = 4.5) + -->
-<!--     scale_fill_manual(values=c("black","red","darkgreen")) + -->
-<!--     labs(title= "County Specific Allocation Metrics", subtitle= "As rates", x="Indicator", y="Rate") + -->
-<!--     plotTheme + theme(axis.text.x = element_text(angle = 45, hjust = 1), legend.position="bottom") -->
-<!-- ``` -->
-
-<!-- # 7. Allocation -->
-<!-- ```{r, warning = FALSE, message = FALSE, fig.height= 8, fig.width= 11} -->
-<!-- fortBend <- -->
-<!--   dat2 %>% -->
-<!--     mutate(Development_Demand = predict(Model6, dat2, type="response")) %>% -->
-<!--     filter(NAME == "Fort Bend")  -->
-
-<!-- fortBend_landUse <- rbind( -->
-<!--   filter(fortBend, forest11 == 1 | wetlands11 == 1 ) %>% -->
-<!--   dplyr::select() %>% mutate(Land_Use = "Not Suitable"), -->
-<!--   filter(fortBend, developed11 == 1) %>% -->
-<!--   dplyr::select() %>% mutate(Land_Use = "Developed")) -->
-
-<!-- grid.arrange( -->
-<!-- ggplot() + -->
-<!--   geom_sf(data=fortBend, aes(fill=factor(ntile(Development_Demand,5))), colour=NA) + -->
-<!--   geom_point(data=fortBend_landUse, aes(x=xyC(fortBend_landUse)[,1],  -->
-<!--                                         y=xyC(fortBend_landUse)[,2], colour=Land_Use), -->
-<!--                                         shape = 15, size = 2) + -->
-<!--   geom_sf(data=st_intersection(houstonHighways,filter(studyAreaCounties, NAME=="Fort Bend")), size=2) + -->
-<!--   scale_fill_manual(values = palette5, name="Development\nDemand", -->
-<!--                     labels=substr(quintileBreaks(fortBend,"Development_Demand"),1,5)) + -->
-<!--   scale_colour_manual(values = c("black","red")) +  -->
-<!--   labs(title = "Development Potential, 2020: Fort Bend") + mapTheme() + -->
-<!--   guides(fill = guide_legend(order = 1), colour = guide_legend(order = 2)), -->
-
-<!-- ggplot() + -->
-<!--   geom_sf(data=fortBend, aes(fill=factor(ntile(pop_Change,5))), colour=NA) + -->
-<!--   geom_point(data=fortBend_landUse, aes(x=xyC(fortBend_landUse)[,1],  -->
-<!--                                         y=xyC(fortBend_landUse)[,2], colour=Land_Use), -->
-<!--                                         shape = 15, size = 2) + -->
-<!--   geom_sf(data=st_intersection(houstonHighways,filter(studyAreaCounties, NAME=="Fort Bend")), size=2) + -->
-<!--   scale_fill_manual(values = palette5, name="Population\nChange", -->
-<!--                     labels=substr(quintileBreaks(fortBend,"pop_Change"),1,5)) + -->
-<!--   scale_colour_manual(values = c("black","red")) +  -->
-<!--   labs(title = "Projected Population, 2020: Fort Bend") + mapTheme() + -->
-<!--   guides(fill = guide_legend(order = 1), colour = guide_legend(order = 2)), ncol=2) -->
-<!-- ``` -->
-
