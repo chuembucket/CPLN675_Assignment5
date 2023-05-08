@@ -55,7 +55,8 @@ library(viridis)
 #library(igraph)
 library(mapview)
 library(here)
-
+library(terra)
+library(cowplot)
 plotTheme <- theme(
   plot.title =element_text(size=12),
   plot.subtitle = element_text(size=8),
@@ -146,24 +147,16 @@ delco <-
 ```{r plot_msa1, warning= FALSE, message= FALSE}
 ggplot()+
   geom_sf(data=delco) +
-  geom_raster(data=rast(lc_change) %>% na.omit %>% filter(value > 0), 
+  geom_raster(data=rast(lc_change) %>% na.omit %>% filter(value > 1), 
               aes(x,y,fill=as.factor(value))) +
   scale_fill_viridis(direction = -1, discrete=TRUE, name ="Land Cover\nChange") +
   labs(title = "Land Cover Change, 2008-2019???") +
-  mapTheme() +
+  mapTheme() 
   theme(legend.direction="horizontal")
 ```
 
-```{r plot_msa, warning= FALSE, message= FALSE}
-ggplot()+
-  geom_sf(data=delco) +
-  geom_raster(data=rast(lc_2019) %>% na.omit %>% filter(value > 0), 
-              aes(x,y,fill=as.factor(value))) +
-  scale_fill_viridis(direction = -1, discrete=TRUE, name ="Land Cover\nChange") +
-  labs(title = "Land Cover Change, 2000-2010") +
-  mapTheme() +
-  theme(legend.direction="horizontal")
-```
+https://www.mrlc.gov/data/legends/national-land-cover-database-class-legend-and-description
+
 
 
 
@@ -190,7 +183,6 @@ lc_change2[lc_change2 < 1] <- NA
 
 names(lc_change2) <- "lc_change"
 
-plot(lc_change2)
 
 ggplot() +
   geom_sf(data=delco) +
@@ -209,6 +201,8 @@ delco_fishnet <-
 delco_fishnet <-
   delco_fishnet[delco,]
 ```
+
+
 
 ```{r, warning = FALSE, message= FALSE}
 ggplot() +
@@ -230,9 +224,8 @@ fishnet <-
 
 ggplot() +
   geom_sf(data=delco) +
-  geom_point(data=fishnet, 
-             aes(x=xyC(fishnet)$x, y=xyC(fishnet)$y, colour=lc_change)) +
-  scale_colour_manual(values = colors,
+  geom_sf(data=fishnet, aes(fill=lc_change), color = NA) +
+  scale_fill_manual(values = colors,
                       labels=c("No Change","New Development"),
                       name = "") +
   labs(title = "Land Cover Development Change", subtitle = "As fishnet centroids") +
@@ -241,18 +234,80 @@ ggplot() +
 
 ## 2.3. Land Cover in 2009
 
-It is reasonable to hypothesize that the propensity of new development is a function of existing land cover categories. In this section we identify these other land cover categories from 2001 and integrate each with the fishnet.
+It is reasonable to hypothesize that the propensity of new development is a function of existing land cover categories. In this section we identify these othe
+
+```{r}
+LCcodes <- unique(lc_2008)
+
+LCcodes
+
+LCnames <-c(
+  "Water",
+  "DevelopedOpen",
+  "DevelopedLow",
+  "DevelopedMed",
+  "DevelopedHigh",
+  "Barren",
+  "DeciduousForest",
+  "EvergreenForest",
+  "MixedForest",
+  "ShrubScrub",
+  "GrassHerbaceous",
+  "PastureHay",
+  "CultCrops",
+  "WoodyWetlands",
+  "EmergentHerbWet")
+
+
+lc_2008spat <- as(lc_2008, "SpatRaster")
+
+nlcdcols <- data.frame(coltab(lc_2008spat))
+nlcdcols <- nlcdcols[LCcodes + 1,]
+LCcolors <- rgb(red = nlcdcols$red,
+                green = nlcdcols$green,
+                blue = nlcdcols$blue,
+                names = as.character(LCcodes),
+                maxColorValue = 255)
+
+LCcolors
+
+```
+
+
 
 ```{r, warning = FALSE, message = FALSE}
-ggplot() +
+
+p1<-ggplot() +
   geom_sf(data=delco) +
   geom_raster(data=rast(lc_2008) %>% na.omit %>% filter(value > 0), 
               aes(x,y,fill=as.factor(value))) +
-  scale_fill_viridis(discrete=TRUE, name ="") +
-  labs(title = "Land Cover, 2008") +
-  mapTheme() +
-  theme(legend.direction="horizontal")
+  scale_fill_manual(name = "Land cover",
+                    values = LCcolors,
+                    labels = LCnames,
+                    na.translate = FALSE) +  
+  labs(title = "Land Cover Classification", subtitle = 2008) +
+  mapTheme()
+
+p2<-ggplot()+
+  geom_sf(data=delco) +
+  geom_raster(data=rast(lc_2019) %>% na.omit %>% filter(value > 0), 
+              aes(x,y,fill=as.factor(value))) +
+  scale_fill_manual(name = "Land cover",
+                    values = LCcolors,
+                    labels = LCnames,
+                    na.translate = FALSE) + 
+  labs(title = "", subtitle = "2019") +
+  mapTheme()+
+  theme(legend.position = 'none')
+
+legend <- get_legend(p1)
+p1<-p1 +  theme(legend.position = 'none')
+
+# move the legend to the right
+ggdraw(plot_grid(p1, p2, legend, ncol=3, align='v', rel_widths=c(1, 1, .4)))
+
 ```
+
 
 ```{r, warning = FALSE, message = FALSE}
 developed <- lc_2008 == 21 | lc_2008 == 22 | lc_2008 == 23 | lc_2008 == 24
@@ -468,17 +523,7 @@ delcoRail <- delcoRoads %>% st_transform(st_crs(lc_change)) %>% filter(RoadClass
 
 ```
 
-```{r plot_highway, warning = FALSE, message= FALSE}
-ggplot() +
-  geom_point(data=fishnet, 
-             aes(x=xyC(fishnet)[,1], y=xyC(fishnet)[,2],colour=lc_change),size=1.5) +
-  geom_sf(data=delcoHighways) +
-  scale_colour_manual(values = palette2,
-                      labels=c("No Change","New Development")) +
-  labs(title = "New Development and Highways",
-       subtitle = "As fishnet centroids") +
-  mapTheme()
-```
+
 
 ```{r, warning = FALSE, message = FALSE}
 emptyRaster <- lc_change
@@ -502,10 +547,8 @@ highwayPoints_fishnet <-
 
 ggplot() +
   geom_sf(data=delco) +
-  geom_point(data=highwayPoints_fishnet, aes(x=xyC(highwayPoints_fishnet)[,1], 
-                                             y=xyC(highwayPoints_fishnet)[,2], 
-                 colour=factor(ntile(distance_highways,5))),size=1.5) +
-  scale_colour_manual(values = palette5,
+  geom_sf(data=highwayPoints_fishnet, aes(fill=factor(ntile(distance_highways,5))),color = NA) +
+  scale_fill_manual(values = palette5,
                       labels=substr(quintileBreaks(highwayPoints_fishnet,"distance_highways"),1,8),
                       name="Quintile\nBreaks") +
   geom_sf(data=delcoHighways, colour = "red") +
@@ -513,6 +556,66 @@ ggplot() +
        subtitle = "As fishnet centroids; Highways visualized in red") +
   mapTheme()
 ```
+
+```{r trains}
+
+septa_rr_line <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/regionalraillines.shp") %>% 
+  st_transform(crs = st_crs(delco)) 
+
+septa_rr_line <- septa_rr_line[delco,]
+
+septa_rr_station <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/regionalrailstats.shp")  
+
+septa_trolley_line <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/trolley.shp")  
+septa_trolley_station <- read_sf("C:/Users/cchue/Documents/GIS/Transit/transitshp/trolleystops.shp")  
+
+ggplot()+
+  geom_sf(data=delco) +
+  geom_raster(data=rast(lc_2019) %>% na.omit %>% filter(value > 0), 
+              aes(x,y,fill=as.factor(value))) +
+  geom_sf(data = septa_rr_line, line = 'dashed')+
+  scale_fill_manual(name = "Land cover",
+                    values = LCcolors,
+                    labels = LCnames,
+                    na.translate = FALSE) 
+  mapTheme()+
+  theme(legend.position = 'none')
+
+```
+
+```{r, warning = FALSE, message = FALSE}
+emptyRaster <- lc_change
+emptyRaster[] <- NA
+
+rr_raster <- 
+  as(septa_rr_line,'Spatial') %>%
+  rasterize(.,emptyRaster)
+
+rr_raster_distance <- distance(rr_raster)
+names(rr_raster_distance) <- "distance_rr"
+
+rrPoints <-
+  rasterToPoints(rr_raster_distance) %>%
+  as.data.frame() %>%
+  st_as_sf(coords = c("x", "y"), crs = st_crs(delco_fishnet))
+
+rrPoints_fishnet <- 
+  aggregate(rrPoints, delco_fishnet, mean) %>%
+  mutate(distance_rr = ifelse(is.na(distance_rr),0,distance_rr))
+
+ggplot() +
+  geom_sf(data=delco) +
+  geom_sf(data=rrPoints_fishnet, aes(fill=factor(ntile(distance_rr,5))),color = NA) +
+  scale_fill_manual(values = palette5,
+                      labels=substr(quintileBreaks(rrPoints_fishnet,"distance_rr"),1,8),
+                      name="Quintile\nBreaks") +
+  geom_sf(data=septa_rr_line, colour = "red") +
+  labs(title = "Distance to Regional Rail",
+       subtitle = "As fishnet centroids; current Regional Rail visualized in red") +
+  mapTheme()
+```
+
+
 
 ```{r municplaitiets}
 
@@ -527,10 +630,10 @@ delcoMunic_fishnet <- st_join(delco_fishnet %>% st_centroid(), delcoMunic, join 
 
 grid.arrange(
 ggplot(delcoMunic_fishnet)+
-  geom_sf(aes(fill = munic_area))+
+  geom_sf(aes(fill = munic_area), color = NA)+
   mapTheme(),
 ggplot(delcoMunic_fishnet)+
-  geom_sf(aes(fill = Name))+
+  geom_sf(aes(fill = Name), color = NA)+
   theme(legend.position = 'none')+
   mapTheme(),
 ncol = 2
@@ -569,11 +672,9 @@ fishnet$lagDevelopment <-
                 2)
 
 ggplot() +
-  geom_sf(data = delco) +
-  geom_point(data=fishnet, 
-             aes(x=xyC(fishnet)[,1], y=xyC(fishnet)[,2], 
-                 colour=factor(ntile(lagDevelopment,5))), size=1.5) +
-  scale_colour_manual(values = palette5,
+  geom_sf(data=fishnet, 
+             aes(fill=factor(ntile(lagDevelopment,5))), color = NA) +
+  scale_fill_manual(values = palette5,
                      labels=substr(quintileBreaks(fishnet,"lagDevelopment"),1,7),
                      name="Quintile\nBreaks") +
   labs(title = "Spatial Lag to 2001 Development",
@@ -735,9 +836,9 @@ predsForMap <-
 
 ```{r, warning = FALSE, message= FALSE, fig.height = 6, fig.width= 8}
 ggplot() +
-  geom_point(data=predsForMap, aes(x=xyC(predsForMap)[,1], y=xyC(predsForMap)[,2], colour=Value)) +
+  geom_sf(data=predsForMap, aes(fill=Value), color =NA) +
   facet_wrap(~Variable) +
-  scale_colour_manual(values = palette2, labels=c("No Change","New Development"),
+  scale_fill_manual(values = palette2, labels=c("No Change","New Development"),
                       name="") +
   labs(title="Development Predictions - Low Threshold") + 
   mapTheme()
@@ -760,10 +861,9 @@ ConfusionMatrix.metrics <-
 
 ```{r, warning = FALSE, message = FALSE, fig.height= 8, fig.width= 8 }
 ggplot(data=ConfusionMatrix.metrics) +
-  geom_point(aes(x=xyC(ConfusionMatrix.metrics)[,1], 
-                 y=xyC(ConfusionMatrix.metrics)[,2], colour = as.factor(Value))) +
+  geom_sf(aes(fill = as.factor(Value)), color = NA) +
   facet_wrap(~Variable) +
-  scale_colour_manual(values = palette2, labels=c("Correct","Incorrect"),
+  scale_fill_manual(values = palette2, labels=c("Correct","Incorrect"),
                        name="") +
   labs(title="Development Predictions - Low Threshold") + mapTheme()
 ```
