@@ -148,8 +148,7 @@ delco <-
 
 ```{r plot_msa1, warning= FALSE, message= FALSE}
 
-LCnames <-c("None",
-  "Water",
+LCnames <-c("None","Water",
   "Urban",
   "Wetland within Class",
   "Herbaceous Wetland",
@@ -166,20 +165,21 @@ lc_changespat <- as(lc_change, "SpatRaster")
 LCcodes <- unique(lc_change)
 
 nlcdcols_c <- data.frame(coltab(lc_changespat))
-nlcdcols_c <- nlcdcols_c[LCcodes + 1,]
+nlcdcols_c <- nlcdcols_c[LCcodes + 1,] 
 LCcolors <- rgb(red = nlcdcols_c$red,
                 green = nlcdcols_c$green,
                 blue = nlcdcols_c$blue,
                 names = as.character(LCcodes),
-                maxColorValue = 255)
+                maxColorValue = 255)[3:length(LCnames)]
+
 ggplot()+
   geom_sf(data=delco) +
   geom_raster(data=rast(lc_change) %>% na.omit %>% filter(value > 1),
               aes(x,y,fill=as.factor(value))) +
-  scale_fill_manual(name = "Land cover",
+  scale_fill_manual(name = "Land cover change",
                     values = LCcolors,
-                    labels = LCnames,
-                    na.translate = FALSE) +   labs(title = "Land Cover Change, 2008-2019???") +
+                    labels =  LCnames[2:length(LCnames)],
+                    na.translate = FALSE) +   labs(title = "Land Cover Change, 2008-2019") +
   mapTheme()
   
 
@@ -196,17 +196,17 @@ We classify the land cover change data in order to identify what areas have expe
 reclassMatrix <- matrix(c(
   0, 0,
   1, 0,
-  2, 1,
-  3, 0,
+  2, 0,
+  3, 1,
   4, 0,
   5, 0,
   6, 0,
   7, 1, 
-  8, 1, 
-  9, 1, 
-  10, 1, 
-  11, 1, 
-  12, 1, 
+  8, 0, 
+  9, 0, 
+  10, 0, 
+  11, 0, 
+  12, 0, 
   Inf, 0
 ), ncol=2, byrow=T)
 
@@ -239,7 +239,7 @@ We use a fishnet that covers Delaware County for our analysis. This will allow u
 
 ```{r delco_fishnet start, warning = FALSE, message = FALSE}
 delco_fishnet <- 
-  st_make_grid(delco, 500, square = F) %>%
+  st_make_grid(delco, 500, square = T) %>%
   st_sf()
 
 delco_fishnet <-
@@ -266,9 +266,12 @@ changePoints <-
 
 fishnet <- 
   aggregate(changePoints, delco_fishnet, sum) %>%
-  mutate(lc_change = ifelse(is.na(lc_change),0,1),
+  mutate(lc_change = ifelse(is.na(lc_change),0,lc_change),
+         lc_change = ifelse(lc_change > 10 ,1 ,0),
          lc_change = as.factor(lc_change))
+```
 
+```{r }
 ggplot() +
   geom_sf(data=delco) +
   geom_sf(data=fishnet, aes(fill=lc_change), color = NA) +
@@ -424,9 +427,9 @@ aggregatedRasters %>%
          Y = xyC(.)$y) %>%
   ggplot() +
     geom_sf(data=delco) +
-    geom_point(aes(X,Y, colour=as.factor(value))) +
+    geom_sf(aes(fill=as.factor(value)),color = NA) +
     facet_wrap(~var) +
-    scale_colour_manual(values = colors,
+    scale_fill_manual(values = colors,
                         labels=c("Other","Land Cover"),
                         name = "") +
     labs(title = "Land Cover Types, 2001",
@@ -488,7 +491,7 @@ delcoPop19 <- delcoPop19 %>%
 Both years of census data are then plotted.
 
 <div class="superbigimage">
-```{r, warning = FALSE, message = FALSE, fig.height= 8, fig.width= 11}
+```{r, warning = FALSE, message = FALSE}
 grid.arrange(
 ggplot() +
   geom_sf(data = delcoPop09, aes(fill=factor(ntile(pop2009,5))), colour=NA) +
@@ -540,7 +543,7 @@ fishnetPopulation <-
   mutate(pop_Change = pop2019 - pop2009)
 ```
 
-```{r, warning = FALSE, message = FALSE, fig.height = 8, fig.width= 11}
+```{r, warning = FALSE, message = FALSE}
 grid.arrange(
 ggplot() +
   geom_sf(data=delcoPop19, aes(fill=factor(ntile(pop2019,5))),colour=NA) +
@@ -913,11 +916,9 @@ testSetProbs <-
 
 testSetProbs <- 
   testSetProbs %>% 
-  mutate(predClass_05 = as.factor(ifelse(testSetProbs$probs >= 0.05 ,1,0)),
+  mutate(
          predClass_17 = as.factor(ifelse(testSetProbs$probs >= 0.17 ,1,0)),
-         predClass_50 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0)),
-         predClass_60 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0)),
-         predClass_70 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0))) 
+         predClass_50 = as.factor(ifelse(testSetProbs$probs >= 0.50 ,1,0))) 
 
 testSetProbs %>%
    dplyr::select(-probs) %>%
@@ -942,7 +943,7 @@ ggplot(testSetProbs, aes(probs)) +
   plotTheme
 ```
 
-```{r, warning = FALSE, message= FALSE, fig.height = 6, fig.width= 8}
+```{r, warning = FALSE, message= FALSE}
 ggplot() +
   geom_sf(data=predsForMap, aes(fill=Value), color =NA) +
   facet_wrap(~Variable) +
@@ -951,7 +952,9 @@ ggplot() +
   labs(title="Development Predictions - Low Threshold") + 
   mapTheme()
 ```
+
 ### Predictions Based on Confusion Matrix
+
 ```{r, warning = FALSE, message = FALSE}
 ConfusionMatrix.metrics <-
   dat %>%
@@ -1021,7 +1024,7 @@ dat_cv <- dat %>% mutate(Name = ifelse(!is.na(Name),Name,'Edge') )
 
 spatialCV_counties <-
   spatialCV(dat_cv,"Name","lc_change", Model6) %>%
-  mutate(predClass = as.factor(ifelse(probs >= 0.5 ,1,0)))
+  mutate(predClass = as.factor(ifelse(probs >= 0.1 ,1,0)))
 
 spatialCV_metrics <-
   spatialCV_counties %>% 
