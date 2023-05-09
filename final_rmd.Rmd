@@ -670,11 +670,11 @@ rrPoints_fishnet <-
 
 #for future rail extension/2030 predictions
 rr_raster2 <- 
-  as(septa_rr_line_additions,'Spatial') %>%
+  as(st_zm(septa_rr_line_addition),'Spatial') %>%
   rasterize(.,emptyRaster)
 
 rr_raster_distance2 <- distance(rr_raster2)
-names(rr_raster_distance2) <- "distance_rr"
+names(rr_raster_distance2) <- "distance_rr2"
 
 rrPoints2 <-
   rasterToPoints(rr_raster_distance2) %>%
@@ -776,7 +776,7 @@ ggplot() +
   scale_fill_manual(values = palette5,
                      labels=substr(quintileBreaks(fishnet,"lagDevelopment"),1,7),
                      name="Quintile\nBreaks") +
-  labs(title = "Spatial Lag to 2001 Development",
+  labs(title = "Spatial Lag to 2010 Development",
        subtitle = "As fishnet centroids") +
   mapTheme()
 ```
@@ -863,11 +863,11 @@ Model1 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped,
 Model2 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment, 
               family="binomial"(link="logit"), data = datTrain)
               
-Model3 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_2000, 
+Model3 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop2009, 
               family="binomial"(link="logit"), data = datTrain)          
               
-Model4 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_2000 + 
-              pop_2010, 
+Model4 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop2009 + 
+              pop2019, 
               family="binomial"(link="logit"), data = datTrain)              
             
 Model5 <- glm(lc_change ~ wetlands + forest  + farm + otherUndeveloped + lagDevelopment + pop_Change, 
@@ -903,10 +903,13 @@ predsForMap <-
     gather(Variable,Value, -geometry) %>%
     st_cast("POLYGON")
 ```
-
 ### Predictions Based on Threshold
 ```{r, warning = FALSE, message = FALSE}
 options(yardstick.event_first = FALSE)
+
+testSetProbs <- 
+  data.frame(class = datTest$lc_change,
+             probs = predict(Model7, datTest, type="response")) 
 
 testSetProbs <- 
   testSetProbs %>% 
@@ -925,11 +928,11 @@ testSetProbs %>%
              Accuracy = round(yardstick::accuracy_vec(class,factor(Value)),2)) %>% 
    kable() %>%
    kable_styling(full_width = F)
+```
 
-testSetProbs <- 
-  data.frame(class = datTest$lc_change,
-             probs = predict(Model7, datTest, type="response")) 
-  
+
+```{r }
+
 ggplot(testSetProbs, aes(probs)) +
   geom_density(aes(fill=class), alpha=0.5) +
   scale_fill_manual(values = palette2,
@@ -1042,22 +1045,22 @@ dat <-
 
 ### Population Projections
 ```{r, eval=FALSE, warning = FALSE, message = FALSE}
-dat %>% mutate(NAME = ifelse(!is.na(Name),Name,'Edge') )
+dat %>% mutate(Name = ifelse(!is.na(Name),Name,'Edge') )
 
 muniPopulation_2030 <- 
   data.frame(
-   NAME = 
+   Name = 
      c("Aldan Borough","Aston Township", "Bethel Township","Brookhaven Borough", "Chadds Ford Township", "Chester City", "Chester Heights Borough", "Chester Township", "Clifton Heights Borough", "Collingdale Borough", "Colwyn Borough", "Concord Township", "Darby Borough", "Darby Township", "East Lansdowne Borough", "Eddystone Borough", "Edgmont Township", "Folcroft Borough", "Glenolden Borough", "Haverford Township", "Landsdowne Borough", "Lower Chichester Township", "Marcus Hook Borough", "Marple Township", "Media Borough", "Middletown Township", "Millbourne Borough","Morton Borough", "Nether Providence Township", "Newton Township", "Norwood Borough", "Parkslide Borough", "Prospect Park Borough", "Radnor Township", "Ridley Park Borough", "Ridley Township", "Rose Valley Borough", "Rutledge Borough", "Sharon Hill Borough", "Springfield Township", "Swarthmore Borough", "Thornbury Township", "Tinicum Township", "Trainer Borough", "Upland Borough", "Upper Chichester Township", "Upper Darby Township", "Uppery Providence Township", "Yeadon Borough"),
    muni_projection_2030 = 
-     c(4137, 17137, 10142, 8308, 3978, 31988, 2688, 9679, 6535, 8795, 2304, 16580, 11882, 28332, 2679, 2666, 3684, 6447, 7046, 51881, 10625, 3665, 2552, 24550, 5391, 17792, 1168, 2727, 13861, 4145, 5931, 2184, 6112, 32266, 7104, 29300, 903, 811, 5793, 24130, 6331, 8508,4273, 1751, 2734, 17416, 82464, 21180, 11472)) %>%
-   cross_join(
+     c(4137, 17137, 10142, 8308, 3978, 31988, 2688, 9679, 6535, 8795, 2304, 16580, 11882, 28332, 2679, 2666, 3684, 6447, 7046, 51881, 10625, 3665, 2552, 24550, 5391, 17792, 1168, 2727, 13861, 4145, 5931, 2184, 6112, 32266, 7104, 29300, 903, 811, 5793, 24130, 6331, 8508,4273, 1751, 2734, 17416, 82464, 21180, 11472)) %>% 
+  right_join(
      dat %>%
-       st_set_geometry(NULL) %>%
+       st_drop_geometry() %>%
        group_by(Name) %>%
        summarize(muni_pop2009 = round(sum(pop2009))))
 
 muniPopulation_2030_1 <- muniPopulation_2030 %>%
-  group_by(NAME) %>%
+  group_by(Name) %>%
   summarize(muni_pop2030 = round(mean(muni_projection_2030)))
 colnames(muniPopulation_2030_1)[1] = "Name"
 
@@ -1081,25 +1084,25 @@ muniPopulation_2030 %>%
 
 ## Development Demand in 2030
 ```{r}
-dat_infill <-
-  dat %>%
-  #calculate population change
-    left_join(muniPopulation_2030) %>%
-    mutate(proportion_of_county_pop = pop_2009 / county_population_2010,
-           pop_2020.infill = proportion_of_county_pop * county_projection_2020,
-           pop_Change = round(pop_2020.infill - pop_2010),2) %>%
-    dplyr::select(-county_projection_2020, -county_population_2010, 
-                  -proportion_of_county_pop, -pop_2020.infill) %>%
-  #predict for 2020
-    mutate(predict_2020.infill = predict(Model6,. , type="response"))
-
-dat_infill %>%
-  ggplot() +  
-  geom_point(aes(x=xyC(dat_infill)[,1], y=xyC(dat_infill)[,2], colour = factor(ntile(predict_2020.infill,5)))) +
-  scale_colour_manual(values = palette5,
-                    labels=substr(quintileBreaks(dat_infill,"predict_2020.infill"),1,4),
-                    name="Quintile\nBreaks") +
-  geom_sf(data=studyAreaCounties, fill=NA, colour="black", size=1) +
-  labs(title= "Development Demand in 2020: Predicted Probabilities") +
-  mapTheme()
+# dat_infill <-
+#   dat %>%
+#   #calculate population change
+#     left_join(muniPopulation_2030) %>%
+#     mutate(proportion_of_county_pop = pop2009 / county_population_2010,
+#            pop_2020.infill = proportion_of_county_pop * county_projection_2020,
+#            pop_Change = round(pop2020.infill - pop2010),2) %>%
+#     dplyr::select(-county_projection_2020, -county_population_2010, 
+#                   -proportion_of_county_pop, -pop2020.infill) %>%
+#   #predict for 2020
+#     mutate(predict_2020.infill = predict(Model6,. , type="response"))
+# 
+# dat_infill %>%
+#   ggplot() +  
+#   geom_point(aes(x=xyC(dat_infill)[,1], y=xyC(dat_infill)[,2], colour = factor(ntile(predict_2020.infill,5)))) +
+#   scale_colour_manual(values = palette5,
+#                     labels=substr(quintileBreaks(dat_infill,"predict_2020.infill"),1,4),
+#                     name="Quintile\nBreaks") +
+#   geom_sf(data=studyAreaCounties, fill=NA, colour="black", size=1) +
+#   labs(title= "Development Demand in 2020: Predicted Probabilities") +
+#   mapTheme()
 ```
